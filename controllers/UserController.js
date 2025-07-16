@@ -1,4 +1,5 @@
 import userModel from "../models/UserModel.js";
+import postModel from "../models/PostModel.js";
 import bcrypt, { compareSync, hash } from "bcryptjs";
 import jwt from "jsonwebtoken";
 
@@ -64,7 +65,7 @@ const loginUser = async (req, res) => {
   console.log("JWT FROM ENV", process.env.JWT_SECRET);
   const token = jwt.sign(
     {
-      id: existUser._id,
+      _id: existUser._id,
       role: existUser.role,
     },
     process.env.JWT_SECRET || "mysecret"
@@ -165,7 +166,6 @@ const deleteUser = async (req, res) => {
 
 
 const userLogin = async (req, res) => {
-  return res.status(200).json("User login successful");
   const { email, password } = req.body;
   // console.log(email, password);
   if (!email || !password) {
@@ -189,7 +189,7 @@ const userLogin = async (req, res) => {
   console.log("JWT FROM ENV", process.env.JWT_SECRET);
   const token = jwt.sign(
     {
-      id: existUser._id,
+      _id: existUser._id,
       role: existUser.role,
     },
     process.env.JWT_SECRET || "mysecret"
@@ -198,11 +198,91 @@ const userLogin = async (req, res) => {
   existUser.login_jwt_token = token;
   await existUser.save();
   return res.status(200).json({
-    message: "Login Successful",
+    message: "User Login Successful",
     token,
     role: existUser.role,
   });
 };
+
+const userPost = async (req, res) => {
+  // return res.status(200).json("User post route is working fine");
+  const { title, content } = req.body;
+  if (!title || !content) {
+    return res.status(400).json("Please provide title and content for the post");
+  }
+  const existingPost = await postModel.findOne({
+    title,
+    author: req.user._id
+  });
+  console.log("Existing Post:", existingPost);
+
+  if (existingPost) {
+    console.log("Post with this title already exists for this user");
+    return res.status(400).json("Post with this title already exists for this user");
+  }
+
+  if (!req.user || !req.user._id) {
+    return res.status(401).json("Unauthorized: Missing user ID");
+  }
+  console.log("Creating post for user:", req.user._id);
+  console.log("Post Data:", { title, content, author: req.user._id });
+  const post = await postModel.create({
+    title,
+    content,
+    author: req.user._id
+  });
+  if (!post) {
+    return res.status(400).json("Post not created due to some issue");
+  }
+  return res.status(200).json({
+    message: "Post created successfully",
+    data: post,
+  });
+}
+
+const userAllPost = async (req, res) => {
+  const posts = await postModel.find(
+    { author: req.user._id }
+  ).populate("author", "name email");
+  if (!posts || posts.length === 0) {
+    return res.status(200).json({ message: "No posts found for this user", data: [] });
+  }
+  return res.status(200).json({
+    message: "Posts fetched successfully",
+    data: posts,
+  });
+};
+
+const userPostUpdate = async (req, res) => {
+  const { content } = req.body;
+  const postId = req.params.id;
+
+  const post = await postModel.findById(postId);
+
+  console.log("Post to update:", post);
+
+  if (!post) {
+    return res.status(404).json("Post not found");
+  }
+
+  // ✅ Check if author is present
+  if (!post.author) {
+    return res.status(400).json("Post author is missing");
+  }
+
+  if (post.author.toString() !== req.user._id.toString()) {
+    return res.status(403).json("You are not authorized to update this post");
+  }
+
+  post.content = content || post.content;
+  await post.save();
+
+  return res.status(200).json({
+    message: "Post updated successfully",
+    data: post,
+  });
+};
+
 
 export {
   RegisterUser,
@@ -211,5 +291,8 @@ export {
   updateUser,
   deleteUser,
   loginUser,
-  userLogin
+  userLogin,
+  userPost,
+  userAllPost,
+  userPostUpdate
 };

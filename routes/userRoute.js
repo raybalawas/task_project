@@ -7,7 +7,10 @@ import {
   deleteUser,
   RegisterUser,
   loginUser,
-  userLogin
+  userLogin,
+  userPost,
+  userAllPost,
+  userPostUpdate
 } from "../controllers/UserController.js";
 
 import { verifyToken, isAdmin, isUser } from "../middlewares/authMiddleware.js";
@@ -22,6 +25,9 @@ router.put("/user-update/:id", verifyToken, isAdmin, updateUser);
 router.delete("/user-delete/:id", verifyToken, isAdmin, deleteUser);
 
 router.post("/user-login", userLogin);
+router.post("/user-create-post", verifyToken, isUser, userPost);
+router.get("/all-post-user", verifyToken, isUser, userAllPost);
+router.post("/user-post-update/:id", verifyToken, isUser, userPostUpdate);
 
 
 export default router;
