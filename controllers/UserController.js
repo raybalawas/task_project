@@ -5,10 +5,7 @@ import jwt from "jsonwebtoken";
 
 const RegisterUser = async (req, res) => {
   const { name, email, password, role } = req.body;
-  if (role !== "user") {
-    console.log("Role must be user");
-    return res.status(400).json("Role must be user");
-  }
+
   if (!name || !email || !password) {
     console.log("Please provide all required fields: name, email, password");
     return res
@@ -27,7 +24,18 @@ const RegisterUser = async (req, res) => {
     console.log("user already exist:", existUser.email);
     return res.status(400).json("user already exist!");
   }
-
+  if (role === "admin") {
+    const adminUser = await userModel.findOne({ role: "admin" });
+    if (adminUser) {
+      return res
+        .status(400)
+        .json("Admin user Already exists, cannot create more.");
+    }
+  }
+  if (role !== "user") {
+    console.log("Role must be user");
+    return res.status(400).json("Role must be user");
+  }
   const user = await userModel.create({
     name,
     email,
@@ -96,7 +104,7 @@ const allUser = async (req, res) => {
     name: user.name,
     email: user.email,
     role: user.role,
-    verified: user.verified,
+    status: user.status,
   }));
   return res
     .status(200)
@@ -111,7 +119,7 @@ const UserById = async (req, res) => {
     name: user.name,
     email: user.email,
     role: user.role,
-    verified: user.verified,
+    status: user.status,
   };
   if (!user) {
     return res.status(400).json("User not exist on this id.");
@@ -121,7 +129,7 @@ const UserById = async (req, res) => {
     .json({ message: "user fetched by id successfully!", data: lessData });
 };
 const updateUser = async (req, res) => {
-  const { name, verified } = req.body;
+  const { name, status } = req.body;
   console.log(name);
   //   return false;
   const id = req.params.id;
@@ -134,7 +142,7 @@ const updateUser = async (req, res) => {
   console.log("userId", findUser._id);
   const updateUser = await userModel.findByIdAndUpdate(
     id,
-    { name, verified },
+    { name, status },
     { new: true }
   );
   if (!updateUser) {
@@ -147,42 +155,12 @@ const updateUser = async (req, res) => {
     name: updateUser.name,
     email: updateUser.email,
     role: updateUser.role,
-    verified: updateUser.verified,
+    status: updateUser.status,
   };
   return res.status(200).json({
     message: "User udpated successfully",
     data: lessData,
   });
-};
-const deleteUser = async (req, res) => {
-  try {
-    const id = req.params.id;
-
-    const deletedUser = await userModel.findById(id);
-    if (!deletedUser) {
-      console.log("User not found");
-      return res.status(404).json("User not found");
-    }
-
-    if (deletedUser.role === "admin") {
-      console.log("Admin user cannot be deleted");
-      return res.status(403).json("Admin user cannot be deleted");
-    }
-
-    const postsAssociated = await postModel.find({ author: id });
-    if (postsAssociated.length > 0) {
-      await postModel.deleteMany({ author: id });
-    }
-
-    await userModel.findByIdAndDelete(id);
-
-    return res
-      .status(200)
-      .json("User deleted successfully along with associated posts");
-  } catch (error) {
-    console.error("Error deleting user:", error);
-    return res.status(500).json("Internal server error");
-  }
 };
 
 const userLogin = async (req, res) => {
@@ -203,14 +181,15 @@ const userLogin = async (req, res) => {
     console.log("Invalid Password!");
   }
   console.log("User role:", existUser.role);
-  console.log("User verified status:", existUser.verified);
   if (existUser.role !== "user") {
-    console.log("User is not verified or not a user role");
-    return res.status(400).json("User is not verified or not a user role");
+    console.log("User is not Active yet or not a user role");
+    return res.status(400).json("User is not Active yet or not a user role");
   }
-  if (!existUser.verified) {
-    console.log("User is not verified");
-    return res.status(400).json("User is not verified");
+  if (!existUser.status || existUser.status !== 1) {
+    console.log("User is not Active");
+    return res
+      .status(400)
+      .json("User is not Active yet. Please contact admin.");
   }
   console.log("JWT FROM ENV", process.env.JWT_SECRET);
   const token = jwt.sign(
@@ -302,6 +281,50 @@ const CommentByUser = async (req, res) => {
     message: "Comment added successfully",
     data: post.comments[post.comments.length - 1],
   });
+};
+
+const userCommentUpdate = async (req, res) => {
+  const { comment } = req.body;
+  const { postId, commentId } = req.params;
+  const userId = req.user._id;
+
+  if (!comment || !postId || !commentId) {
+    return res.status(400).json({ message: "Missing required data." });
+  }
+
+  try {
+    const result = await postModel.findOneAndUpdate(
+      {
+        _id: postId,
+        "comments._id": commentId,
+        "comments.commentedBy": userId,
+      },
+      {
+        $set: {
+          "comments.$.text": comment,
+        },
+      },
+      { new: true }
+    );
+
+    if (!result) {
+      return res.status(404).json({
+        message: "Post or comment not found, or you're not authorized.",
+      });
+    }
+
+    const updatedComment = result.comments.find(
+      (c) => c._id.toString() === commentId
+    );
+
+    return res.status(200).json({
+      message: "Comment updated successfully",
+      data: updatedComment,
+    });
+  } catch (error) {
+    console.error("Error updating comment:", error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
 };
 
 const userCommentDelete = async (req, res) => {
@@ -425,6 +448,48 @@ const CommentByAdmin = async (req, res) => {
     data: post.comments[post.comments.length - 1],
   });
 };
+
+const adminCommentUpdate = async (req, res) => {
+  const { comment } = req.body;
+  const { postId, commentId } = req.params;
+
+  if (!comment || !postId || !commentId) {
+    return res.status(400).json({ message: "Missing required data." });
+  }
+
+  try {
+    const result = await postModel.findOneAndUpdate(
+      {
+        _id: postId,
+        "comments._id": commentId,
+      },
+      {
+        $set: {
+          "comments.$.text": comment,
+        },
+      },
+      { new: true }
+    );
+
+    if (!result) {
+      return res.status(404).json({
+        message: "Post or comment not found",
+      });
+    }
+
+    const updatedComment = result.comments.find(
+      (c) => c._id.toString() === commentId
+    );
+
+    return res.status(200).json({
+      message: "Comment updated successfully",
+      data: updatedComment,
+    });
+  } catch (error) {
+    console.error("Error updating comment:", error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
 const adminCommentDelete = async (req, res) => {
   const { postId, commentId } = req.params;
   if (!postId || !commentId) {
@@ -494,17 +559,18 @@ export {
   allUser,
   UserById,
   updateUser,
-  deleteUser,
   loginUser,
   userLogin,
   userPost,
   userAllPost,
   CommentByUser,
+  userCommentUpdate,
   userCommentDelete,
   userPostUpdate,
   userPostDelete,
   AllPostForAdmin,
   CommentByAdmin,
+  adminCommentUpdate,
   adminCommentDelete,
   PostUpdateByAdmin,
   PostDeleteByAdmin,
