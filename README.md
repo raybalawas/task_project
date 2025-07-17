@@ -8,13 +8,25 @@ This is a backend API built with **Node.js**, **Express.js**, and **MongoDB** th
 
 ### 1. User Registration & Authentication
 
-- Users can register via `/api/users/register`
-- Only one `admin` account can be created. All other registrations default to the `user` role.
-- Registered users remain **inactive** until verified by the Admin.
-- Admin can verify/update user status via `/api/users/user-update/:id`
-- Only **active users** can log in via `/api/users/user-login` using email and password.
-- Authenticated users receive a **JWT token** for accessing protected routes.
+Users can register at POST /api/users/register
 
+Only one Admin is allowed; all others are registered as Users.
+
+Registered users remain inactive until verified by an Admin.
+
+Admin can verify users using:
+
+PUT /api/users/user-update/:id
+
+Verified users can log in at:
+
+POST /api/users/user-login
+
+
+http://localhost:3000/api/users/register
+http://localhost:3000/api/users/login
+http://localhost:3000/api/users/user-login
+http://localhost:3000/api/users/user-update/:id
 ---
 
 ### 2. Role-Based Access Control
